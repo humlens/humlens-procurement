@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  border-color: theme('colors.gray.200');
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+::selection {
+  @apply bg-brand-100 text-brand-900;
+}
+
+/* Scrollbars — thin, unobtrusive, matches the neutral chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: theme('colors.gray.300') transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-gray-300;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white p-5 shadow-card;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium leading-none transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-sm hover:bg-brand-700 focus-visible:ring-brand-500;
+  }
+
+  .btn-secondary {
+    @apply btn border border-gray-300 bg-white text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 focus-visible:ring-brand-500;
+  }
+
+  .btn-ghost {
+    @apply btn text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus-visible:ring-brand-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-500;
+  }
+
+  .input {
+    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 shadow-sm transition-shadow duration-150 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset;
+  }
+
+  .page-table {
+    @apply w-full border-separate border-spacing-0 text-sm;
+  }
+
+  .page-table thead th {
+    @apply sticky top-0 z-10 border-b border-gray-200 bg-gray-50/90 px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 backdrop-blur;
+  }
+
+  .page-table tbody tr {
+    @apply transition-colors duration-100;
+  }
+
+  .page-table tbody tr:not(:last-child) td {
+    @apply border-b border-gray-100;
+  }
+
+  .page-table tbody tr:hover {
+    @apply bg-gray-50/80;
+  }
+
+  .page-table tbody td {
+    @apply px-4 py-3 align-middle text-gray-700;
+  }
+
+  .section-title {
+    @apply text-sm font-semibold text-gray-900;
+  }
+}

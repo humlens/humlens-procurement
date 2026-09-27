@@ -1,0 +1,26 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
+
+import { guardTeamAccess, handleApiError } from '@/lib/apiGuard';
+import { getAgentPolicy, updateAgentPolicy } from 'models/agentAction';
+import { validateWithSchema, updateAgentPolicySchema } from '@/lib/zod';
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    if (req.method === 'GET') {
+      const teamMember = await guardTeamAccess(req, res, 'agent_policy', 'read');
+      res.status(200).json({ data: await getAgentPolicy(teamMember.teamId) });
+      return;
+    }
+
+    if (req.method === 'PUT') {
+      const teamMember = await guardTeamAccess(req, res, 'agent_policy', 'configure');
+      const params = validateWithSchema(updateAgentPolicySchema, req.body);
+      res.status(200).json({ data: await updateAgentPolicy(teamMember.teamId, params) });
+      return;
+    }
+
+    res.status(405).end();
+  } catch (error) {
+    handleApiError(res, error);
+  }
+}
