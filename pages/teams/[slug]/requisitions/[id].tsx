@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GetServerSideProps } from 'next';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
@@ -9,6 +9,7 @@ import Layout from '@/components/Layout';
 import Badge from '@/components/Badge';
 import { apiFetch, apiPost } from '@/lib/fetcher';
 import { requireTeamPage } from '@/lib/pageAuth';
+import ShopCatalogButton from '@/components/requisitions/ShopCatalogButton';
 
 export const getServerSideProps: GetServerSideProps = requireTeamPage;
 
@@ -27,6 +28,16 @@ export default function RequisitionDetail({ role }: { role: string }) {
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['requisition', slug, id] });
+
+  // Back from a supplier's PunchOut catalog.
+  useEffect(() => {
+    const added = router.query.punchout;
+    if (typeof added !== 'string') return;
+    toast.success(Number(added) > 0 ? `${added} item(s) added from the supplier’s catalog.` : 'You left the catalog without adding anything.', { id: 'punchout-return' });
+    const { punchout: _added, ...rest } = router.query;
+    void router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.query.punchout]);
 
   const submit = async () => {
     setBusy(true);
@@ -112,7 +123,7 @@ export default function RequisitionDetail({ role }: { role: string }) {
                 {requisition.agentActions.map((a: any) => (
                   <li key={a.id} className="text-sm">
                     <div className="flex items-center justify-between">
-                      <span>{a.type.replaceAll('_', ' ')}</span>
+                      <span>{a.title ?? a.type.replaceAll('_', ' ')}</span>
                       <Badge status={a.status} />
                     </div>
                     {a.reasoning && <p className="text-xs text-gray-500">{a.reasoning}</p>}
@@ -141,9 +152,12 @@ export default function RequisitionDetail({ role }: { role: string }) {
 
           <div className="card space-y-3">
             {requisition.status === 'DRAFT' && (
-              <button className="btn-primary w-full" onClick={submit} disabled={busy}>
-                Submit for approval
-              </button>
+              <>
+                <button className="btn-primary w-full" onClick={submit} disabled={busy}>
+                  Submit for approval
+                </button>
+                <ShopCatalogButton slug={slug} requisitionId={id} className="btn-secondary w-full justify-center" />
+              </>
             )}
 
             {canDecide && (

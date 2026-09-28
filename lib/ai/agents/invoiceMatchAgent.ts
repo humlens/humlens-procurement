@@ -1,12 +1,12 @@
-import { runThreeWayMatch, applyMatchResult } from 'models/invoice';
-import { logAgentAction } from 'models/agentAction';
+import { prisma } from '@/lib/prisma';
+import { logAgentAction, proposeAction } from 'models/agentAction';
 import { getMatchTolerancePct } from '@/lib/ai/policy';
 
-// Runs the 3-way match (PO x goods receipt x invoice) autonomously whenever
-// a new invoice comes in, using the same matching logic the manual "Review
-// match" button uses. A clean match still requires human sign-off to move
-// to APPROVED (see models/invoice.ts#approveInvoice) — the agent only saves
-// the reviewer the work of checking the numbers themselves.
+// Runs the three-way match (PO × goods receipt × invoice) on its own whenever
+// a new invoice comes in, through the same `invoice.applyMatch` action the
+// inbox can undo. A clean match still needs a person to approve the invoice
+// for payment (see models/invoice.ts#approveInvoice); the agent only saves
+// the reviewer checking the numbers.
 export async function runInvoiceMatchAgent(teamId: string, invoiceId: string) {
   const tolerancePct = await getMatchTolerancePct(teamId);
 
@@ -15,24 +15,39 @@ export async function runInvoiceMatchAgent(teamId: string, invoiceId: string) {
       teamId,
       type: 'AUTO_MATCH_INVOICE',
       status: 'REJECTED_BY_POLICY',
+      agent: 'invoice-match',
+      title: 'Invoice not matched: automatic matching is off',
       invoiceId,
       reasoning: 'Autonomous invoice matching is disabled for this team.',
     });
   }
 
-  const result = await runThreeWayMatch(teamId, invoiceId, tolerancePct);
-  await applyMatchResult(teamId, invoiceId, result);
-
-  return logAgentAction({
+  const action = await proposeAction({
     teamId,
     type: 'AUTO_MATCH_INVOICE',
-    status: 'EXECUTED',
+    agent: 'invoice-match',
+    tool: 'invoice.applyMatch',
+    args: { invoiceId, tolerancePct },
     invoiceId,
-    input: { tolerancePct },
-    output: { matched: result.matched, mismatches: result.mismatches },
-    reasoning: result.matched
-      ? 'All invoice lines matched their PO price and received quantity within tolerance.'
-      : `${result.mismatches.length} line(s) failed to match — flagged for human review.`,
-    confidence: result.matched ? 0.95 : 0.4,
+    autoApply: true,
+    reasoning: 'Matching the invoice against its purchase order and what was received.',
+  });
+
+  // Say what the match found, now that it has run.
+  const result = action.result as { matched?: boolean; mismatches?: number } | null;
+  if (action.status !== 'EXECUTED' || !result) return action;
+  return prisma.agentAction.update({
+    where: { id: action.id },
+    data: {
+      evidence: [
+        { label: 'Result', value: result.matched ? 'matched' : 'mismatched' },
+        { label: 'Lines off', value: result.mismatches ?? 0 },
+        { label: 'Tolerance', value: `${tolerancePct}%` },
+      ],
+      reasoning: result.matched
+        ? 'All invoice lines matched their PO price and received quantity within tolerance.'
+        : `${result.mismatches} line(s) failed to match, so the invoice is flagged for a person to review.`,
+      confidence: result.matched ? 0.95 : 0.4,
+    },
   });
 }

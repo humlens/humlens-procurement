@@ -2,6 +2,7 @@ import { ApiError } from '@/lib/errors';
 import { can, Action, Resource } from '@/lib/permissions';
 import { getUserByEmail } from 'models/user';
 import { getTeamMember } from 'models/team';
+import { recordAudit } from '@/lib/audit';
 
 // Every MCP tool call authenticates as a real team member, resolved from
 // the caller-supplied email — there's no separate "service account" concept,
@@ -28,4 +29,29 @@ export async function guardMcpAction(
     throw new ApiError(403, `${actingUserEmail} does not have permission to ${action} ${resource}.`);
   }
   return actor;
+}
+
+// Wraps a write tool's result: once it resolves, records the audit entry
+// under the acting member, with source MCP. Pass `targetId` when the tool
+// returns something other than the record it changed.
+export async function auditMcp<T>(
+  actor: Awaited<ReturnType<typeof resolveMcpActor>>,
+  resource: Resource,
+  action: Action,
+  result: Promise<T>,
+  targetId?: string
+) {
+  const value = await result;
+  const target = (value ?? {}) as { id?: unknown; name?: unknown; title?: unknown; poNumber?: unknown };
+  const label = [target.name, target.title, target.poNumber].find((v): v is string => typeof v === 'string');
+  await recordAudit({
+    teamId: actor.team.id,
+    actor: actor.user,
+    source: 'MCP',
+    resource,
+    action,
+    targetId: targetId ?? (typeof target.id === 'string' ? target.id : null),
+    targetLabel: label ?? null,
+  });
+  return value;
 }

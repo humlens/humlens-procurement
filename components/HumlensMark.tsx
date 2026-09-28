@@ -5,7 +5,7 @@ type HumlensMarkProps = {
   title?: string;
 };
 
-// The real Humlens mark — ported from the parent brand (makeships-app /
+// The real Humlens mark — ported from the parent brand (apps/humlens-localization /
 // components/marketing/HumlensMark.tsx) so this product carries the actual
 // identity rather than a generic icon-in-a-box.
 export default function HumlensMark({ className, title = 'Humlens' }: HumlensMarkProps) {

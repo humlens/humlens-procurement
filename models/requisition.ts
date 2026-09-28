@@ -4,6 +4,7 @@ import { Role, RequisitionStatus, ApprovalStepStatus } from '@prisma/client';
 import { ApiError } from '@/lib/errors';
 import { resolveApprovalWorkflow } from './approvalWorkflow';
 import { applyBudgetTransaction } from './budget';
+import { afterRequisitionChange } from '@/lib/operations';
 
 export const listRequisitions = async (
   teamId: string,
@@ -69,7 +70,9 @@ export const createRequisition = async (params: {
   budgetId?: string;
   neededBy?: Date;
   currency: string;
+  externalReference?: string;
   lineItems: {
+    sku?: string;
     description: string;
     quantity: number;
     unit?: string;
@@ -92,6 +95,7 @@ export const createRequisition = async (params: {
       departmentId: params.departmentId,
       budgetId: params.budgetId,
       neededBy: params.neededBy,
+      externalReference: params.externalReference,
       currency: params.currency,
       totalAmount,
       status: RequisitionStatus.DRAFT,
@@ -128,7 +132,7 @@ export const submitRequisition = async (teamId: string, id: string) => {
     });
   }
 
-  return prisma.purchaseRequisition.update({
+  const submitted = await prisma.purchaseRequisition.update({
     where: { id },
     data: {
       status: roles.length ? RequisitionStatus.IN_APPROVAL : RequisitionStatus.APPROVED,
@@ -142,6 +146,8 @@ export const submitRequisition = async (teamId: string, id: string) => {
     },
     include: { approvalSteps: true },
   });
+  void afterRequisitionChange(teamId, id);
+  return submitted;
 };
 
 // Approves or rejects the requisition's current (lowest PENDING) step on
@@ -173,7 +179,7 @@ export const decideRequisitionStep = async (params: {
     throw new ApiError(403, `This step requires ${step.requiredRole} approval.`);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const decided = await prisma.$transaction(async (tx) => {
     await tx.requisitionApprovalStep.update({
       where: { id: step.id },
       data: {
@@ -223,4 +229,6 @@ export const decideRequisitionStep = async (params: {
 
     return tx.purchaseRequisition.findUniqueOrThrow({ where: { id: requisitionId } });
   });
+  void afterRequisitionChange(teamId, requisitionId);
+  return decided;
 };

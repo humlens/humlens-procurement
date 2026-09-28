@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { POStatus, ReceiptStatus } from '@prisma/client';
+import { afterGoodsReceipt } from '@/lib/operations';
 
 export const listGoodsReceipts = async (teamId: string, poId?: string) => {
   return prisma.goodsReceipt.findMany({
@@ -19,7 +20,7 @@ export const createGoodsReceipt = async (params: {
   notes?: string;
   lineItems: { poLineItemId: string; quantityReceived: number; condition?: string }[];
 }) => {
-  return prisma.$transaction(async (tx) => {
+  const receipt = await prisma.$transaction(async (tx) => {
     const po = await tx.purchaseOrder.findFirstOrThrow({
       where: { id: params.poId, teamId: params.teamId },
       include: { lineItems: true },
@@ -61,4 +62,8 @@ export const createGoodsReceipt = async (params: {
 
     return receipt;
   });
+
+  // Stock into Inventory, and let a connected store know.
+  void afterGoodsReceipt(params.teamId, receipt.id);
+  return receipt;
 };

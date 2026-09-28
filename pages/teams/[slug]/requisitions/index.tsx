@@ -9,6 +9,7 @@ import Layout from '@/components/Layout';
 import Badge from '@/components/Badge';
 import DataTable, { type AppColumnDef } from '@/components/DataTable';
 import NewButton from '@/components/NewButton';
+import ShopCatalogButton from '@/components/requisitions/ShopCatalogButton';
 import SidebarModal from '@/components/SidebarModal';
 import { apiFetch, apiPost } from '@/lib/fetcher';
 import { requireTeamPage } from '@/lib/pageAuth';
@@ -132,7 +133,8 @@ export default function Requisitions() {
 
   return (
     <Layout title="Requisitions" icon={FileText} iconTone="blue">
-      <div className="mb-4 flex justify-end gap-2">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <ShopCatalogButton slug={slug} />
         <button
           type="button"
           className="btn-secondary"

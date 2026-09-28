@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { signOut, useSession } from 'next-auth/react';
 import { ReactNode, useEffect, useState } from 'react';
 import {
+  Inbox,
   LayoutDashboard,
   FileText,
   CheckSquare,
@@ -27,12 +28,19 @@ import CommandPalette from '@/components/CommandPalette';
 import HumlensMark from '@/components/HumlensMark';
 import { openCommandPalette } from '@/lib/store';
 import { iconToneClasses, type IconTone } from '@/lib/iconTones';
+import AppSwitcher from '@/components/AppSwitcher';
 
 type NavItem = { href: string; label: string; icon: LucideIcon; tone: IconTone };
 type NavGroup = { label: string; items: NavItem[] };
 
 const navGroups: NavGroup[] = [
-  { label: 'Overview', items: [{ href: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, tone: 'brand' }] },
+  {
+    label: 'Overview',
+    items: [
+      { href: 'inbox', label: 'Inbox', icon: Inbox, tone: 'brand' },
+      { href: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, tone: 'brand' },
+    ],
+  },
   {
     label: 'Procure',
     items: [
@@ -159,6 +167,7 @@ export default function Layout({
             Settings
           </Link>
         </div>
+        <AppSwitcher />
       </nav>
 
       <div className="border-t border-gray-200 p-3">

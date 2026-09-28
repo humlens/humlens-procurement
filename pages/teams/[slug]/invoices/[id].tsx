@@ -126,7 +126,7 @@ export default function InvoiceDetail() {
                 {invoice.agentActions.map((a: any) => (
                   <li key={a.id}>
                     <div className="flex items-center justify-between">
-                      <span>{a.type.replaceAll('_', ' ')}</span>
+                      <span>{a.title ?? a.type.replaceAll('_', ' ')}</span>
                       <Badge status={a.status} />
                     </div>
                     {a.reasoning && <p className="text-xs text-gray-500">{a.reasoning}</p>}

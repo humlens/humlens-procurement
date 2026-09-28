@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { InvoiceStatus } from '@prisma/client';
+import { afterInvoiceApproved } from '@/lib/operations';
 
 export const listInvoices = async (teamId: string, params?: { status?: InvoiceStatus }) => {
   return prisma.invoice.findMany({
@@ -157,8 +158,11 @@ export const applyMatchResult = async (
 
 export const approveInvoice = async (teamId: string, id: string, reviewedById: string) => {
   await prisma.invoice.findFirstOrThrow({ where: { id, teamId } });
-  return prisma.invoice.update({
+  const invoice = await prisma.invoice.update({
     where: { id },
     data: { status: InvoiceStatus.APPROVED, reviewedById },
   });
+  // What was actually paid becomes Inventory's item cost.
+  void afterInvoiceApproved(teamId, id);
+  return invoice;
 };

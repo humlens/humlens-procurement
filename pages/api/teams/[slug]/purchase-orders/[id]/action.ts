@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { z } from 'zod';
 
 import { guardTeamAccess, handleApiError } from '@/lib/apiGuard';
+import { setAuditEvent } from '@/lib/audit';
 import { approvePurchaseOrder, issuePurchaseOrder, cancelPurchaseOrder, getPurchaseOrder } from 'models/purchaseOrder';
 import { validateWithSchema } from '@/lib/zod';
 import { ApiError } from '@/lib/errors';
@@ -18,6 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { action } = validateWithSchema(actionSchema, req.body);
     const permAction = action === 'approve' ? 'approve' : action === 'issue' ? 'issue' : 'delete';
     const teamMember = await guardTeamAccess(req, res, 'purchase_order', permAction);
+    setAuditEvent(res, { resource: 'purchase_order', action });
     const id = req.query.id as string;
 
     if (action === 'approve') {

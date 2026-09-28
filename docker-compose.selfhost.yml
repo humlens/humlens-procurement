@@ -1,0 +1,70 @@
+# Self-hosted / on-prem deployment stack for Humlens Procurement.
+#
+# `docker-compose.yml` is dev-only (a Postgres for `npm run dev`). This file
+# is the production stack: the app, a one-off migration job, and Postgres.
+#
+# Usage:
+#   cp .env.selfhost.example .env
+#   # edit .env: at minimum NEXTAUTH_SECRET, NEXTAUTH_URL/APP_URL and
+#   # POSTGRES_PASSWORD
+#   docker compose -f docker-compose.selfhost.yml up -d --build
+#
+# Runs on its own. To connect it to other Humlens apps, set the
+# NEXT_PUBLIC_HUMLENS_*_URL and HUMLENS_SSO_SECRET values in .env and add the
+# connections under Settings -> Integrations. See CONTRACT.md.
+
+x-database-url: &database-url ${DATABASE_URL:-postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD:-procurement}@db:5432/${POSTGRES_DB:-procurement}?schema=public}
+
+services:
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+        NEXT_PUBLIC_HUMLENS_COMMERCE_URL: ${NEXT_PUBLIC_HUMLENS_COMMERCE_URL:-}
+        NEXT_PUBLIC_HUMLENS_INVENTORY_URL: ${NEXT_PUBLIC_HUMLENS_INVENTORY_URL:-}
+        NEXT_PUBLIC_HUMLENS_PROCUREMENT_URL: ${NEXT_PUBLIC_HUMLENS_PROCUREMENT_URL:-}
+    image: humlens-procurement:selfhost
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: *database-url
+    ports:
+      - '${APP_PORT:-4100}:4100'
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    image: humlens-procurement:migrate
+    env_file: .env
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  db:
+    image: postgres:16.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-procurement}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-procurement}
+      POSTGRES_DB: ${POSTGRES_DB:-procurement}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-procurement}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

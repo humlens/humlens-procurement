@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { guardTeamAccess, handleApiError } from '@/lib/apiGuard';
+import { ApiError } from '@/lib/errors';
+import { can } from '@/lib/permissions';
 import { listVendors, createVendor } from 'models/vendor';
 import { validateWithSchema, createVendorSchema } from '@/lib/zod';
 
@@ -20,11 +22,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === 'POST') {
       const teamMember = await guardTeamAccess(req, res, 'vendor', 'create');
-      const params = validateWithSchema(createVendorSchema, req.body);
+      const { activate, ...params } = validateWithSchema(createVendorSchema, req.body);
+      if (activate && !can(teamMember.role, 'vendor', 'update')) {
+        throw new ApiError(403, 'You do not have permission to approve vendors.');
+      }
       const vendor = await createVendor({
         teamId: teamMember.teamId,
         createdById: teamMember.userId,
         ...params,
+        ...(activate ? { status: 'ACTIVE' as const } : {}),
       });
       res.status(201).json({ data: vendor });
       return;

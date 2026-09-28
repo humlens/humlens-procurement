@@ -11,10 +11,13 @@ import SidebarModal from '@/components/SidebarModal';
 import VendorForm from '@/components/forms/VendorForm';
 import { apiFetch, apiPut } from '@/lib/fetcher';
 import { requireTeamPage } from '@/lib/pageAuth';
+import { can } from '@/lib/permissions';
+import PunchoutCard from '@/components/vendors/PunchoutCard';
+import type { Role } from '@prisma/client';
 
 export const getServerSideProps: GetServerSideProps = requireTeamPage;
 
-export default function VendorDetail() {
+export default function VendorDetail({ role }: { role: Role }) {
   const router = useRouter();
   const slug = router.query.slug as string;
   const id = router.query.id as string;
@@ -86,6 +89,8 @@ export default function VendorDetail() {
               </div>
             </dl>
           </div>
+
+          <PunchoutCard slug={slug} vendorId={id} canEdit={can(role, 'vendor', 'update')} />
 
           <div className="card">
             <h2 className="mb-3 font-medium">Recent purchase orders</h2>

@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import type { GetServerSideProps } from 'next';
+import { can } from '@/lib/permissions';
 
 import { getSession } from '@/lib/session';
 import { getTeams } from 'models/team';
@@ -49,5 +50,7 @@ export const getServerSideProps: GetServerSideProps = async ({ req, res }) => {
     return { redirect: { destination: '/teams/new', permanent: false } };
   }
 
-  return { redirect: { destination: `/teams/${teams[0].slug}/dashboard`, permanent: false } };
+  // The agent inbox is home for anyone who reviews agent work.
+  const home = can(teams[0].myRole, 'agent_action', 'read') ? 'inbox' : 'dashboard';
+  return { redirect: { destination: `/teams/${teams[0].slug}/${home}`, permanent: false } };
 };

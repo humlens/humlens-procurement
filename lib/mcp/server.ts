@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { guardMcpAction, resolveMcpActor } from './context';
+import { auditMcp, guardMcpAction, resolveMcpActor } from './context';
 import { listRequisitions, getRequisition, createRequisition, submitRequisition, decideRequisitionStep } from 'models/requisition';
 import { draftRequisitionFromPrompt } from '@/lib/ai/agents/requisitionDraftAgent';
 import { listVendors, createVendor } from 'models/vendor';
@@ -9,7 +9,7 @@ import { listPurchaseOrders, createPurchaseOrder, issuePurchaseOrder } from 'mod
 import { listBudgets } from 'models/budget';
 import { listInvoices } from 'models/invoice';
 import { runInvoiceMatchAgent } from '@/lib/ai/agents/invoiceMatchAgent';
-import { listAgentActions } from 'models/agentAction';
+import { approveAgentAction, getAgentInbox, listAgentActions, rejectAgentAction, undoAgentAction } from 'models/agentAction';
 
 const json = (data: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
@@ -22,7 +22,7 @@ const json = (data: unknown) => ({
 // the exact models/*.ts functions the API routes call, so there's one
 // source of truth for business rules regardless of entry point.
 export function createProcurementMcpServer() {
-  const server = new McpServer({ name: 'procurement-app', version: '0.1.0' });
+  const server = new McpServer({ name: 'humlens-procurement', version: '0.1.0' });
 
   server.registerTool(
     'list_requisitions',
@@ -82,11 +82,16 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, ...params }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'requisition', 'create');
-      const requisition = await createRequisition({
-        teamId: actor.team.id,
-        requesterId: actor.user.id,
-        ...params,
-      });
+      const requisition = await auditMcp(
+        actor,
+        'requisition',
+        'create',
+        createRequisition({
+          teamId: actor.team.id,
+          requesterId: actor.user.id,
+          ...params,
+        })
+      );
       return json(requisition);
     }
   );
@@ -107,13 +112,18 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, prompt, departmentId, budgetId }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'requisition', 'create');
-      const requisition = await draftRequisitionFromPrompt({
-        teamId: actor.team.id,
-        requesterId: actor.user.id,
-        departmentId,
-        budgetId,
-        prompt,
-      });
+      const requisition = await auditMcp(
+        actor,
+        'requisition',
+        'create',
+        draftRequisitionFromPrompt({
+          teamId: actor.team.id,
+          requesterId: actor.user.id,
+          departmentId,
+          budgetId,
+          prompt,
+        })
+      );
       return json(requisition);
     }
   );
@@ -127,7 +137,7 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, requisitionId }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'requisition', 'submit');
-      return json(await submitRequisition(actor.team.id, requisitionId));
+      return json(await auditMcp(actor, 'requisition', 'submit', submitRequisition(actor.team.id, requisitionId), requisitionId));
     }
   );
 
@@ -148,14 +158,20 @@ export function createProcurementMcpServer() {
       const action = decision === 'APPROVED' ? 'approve' : 'reject';
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'requisition', action);
       return json(
-        await decideRequisitionStep({
-          teamId: actor.team.id,
-          requisitionId,
-          actorId: actor.user.id,
-          actorRole: actor.teamMember.role,
-          decision,
-          comment,
-        })
+        await auditMcp(
+          actor,
+          'requisition',
+          action,
+          decideRequisitionStep({
+            teamId: actor.team.id,
+            requisitionId,
+            actorId: actor.user.id,
+            actorRole: actor.teamMember.role,
+            decision,
+            comment,
+          }),
+          requisitionId
+        )
       );
     }
   );
@@ -196,7 +212,7 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, ...params }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'vendor', 'create');
-      return json(await createVendor({ teamId: actor.team.id, createdById: actor.user.id, ...params }));
+      return json(await auditMcp(actor, 'vendor', 'create', createVendor({ teamId: actor.team.id, createdById: actor.user.id, ...params })));
     }
   );
 
@@ -246,7 +262,9 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, ...params }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'purchase_order', 'create');
-      return json(await createPurchaseOrder({ teamId: actor.team.id, createdById: actor.user.id, ...params }));
+      return json(
+        await auditMcp(actor, 'purchase_order', 'create', createPurchaseOrder({ teamId: actor.team.id, createdById: actor.user.id, ...params }))
+      );
     }
   );
 
@@ -259,7 +277,7 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, poId }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'purchase_order', 'issue');
-      return json(await issuePurchaseOrder(actor.team.id, poId));
+      return json(await auditMcp(actor, 'purchase_order', 'issue', issuePurchaseOrder(actor.team.id, poId), poId));
     }
   );
 
@@ -308,7 +326,7 @@ export function createProcurementMcpServer() {
     },
     async ({ teamSlug, actingUserEmail, invoiceId }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'invoice', 'match');
-      return json(await runInvoiceMatchAgent(actor.team.id, invoiceId));
+      return json(await auditMcp(actor, 'invoice', 'match', runInvoiceMatchAgent(actor.team.id, invoiceId), invoiceId));
     }
   );
 
@@ -324,6 +342,36 @@ export function createProcurementMcpServer() {
       return json(await listAgentActions(actor.team.id, limit));
     }
   );
+
+  server.registerTool(
+    'get_agent_inbox',
+    {
+      title: 'Get the agent inbox',
+      description:
+        'What needs a person (proposed changes with their evidence), what agents did on their own in the last two weeks (with whether it can be undone), and unread findings.',
+      inputSchema: { teamSlug: z.string(), actingUserEmail: z.string().email() },
+    },
+    async ({ teamSlug, actingUserEmail }) => {
+      const actor = await guardMcpAction(teamSlug, actingUserEmail, 'agent_action', 'read');
+      return json(await getAgentInbox(actor.team.id, { userId: actor.user.id, role: actor.teamMember.role }));
+    }
+  );
+
+  const reviewTool = (name: string, title: string, description: string, run: typeof undoAgentAction) =>
+    server.registerTool(
+      name,
+      { title, description, inputSchema: { teamSlug: z.string(), actingUserEmail: z.string().email(), actionId: z.string() } },
+      async ({ teamSlug, actingUserEmail, actionId }) => {
+        const actor = await resolveMcpActor(teamSlug, actingUserEmail);
+        return json(
+          await auditMcp(actor, 'agent_action', name === 'undo_agent_action' ? 'update' : name === 'reject_agent_action' ? 'reject' : 'approve',
+            run(actor.team.id, actionId, { userId: actor.user.id, role: actor.teamMember.role }))
+        );
+      }
+    );
+  reviewTool('approve_agent_action', 'Approve an agent action', 'Apply a change an agent proposed, as the acting user.', (teamId, id, reviewer) => approveAgentAction(teamId, id, reviewer));
+  reviewTool('reject_agent_action', 'Dismiss an agent action', 'Dismiss a change an agent proposed without applying it.', rejectAgentAction);
+  reviewTool('undo_agent_action', 'Undo an agent action', 'Reverse a change an agent (or a person approving it) applied.', undoAgentAction);
 
   return server;
 }

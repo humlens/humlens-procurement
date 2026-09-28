@@ -41,6 +41,11 @@ export default function Login() {
         </>
       }
     >
+      {typeof router.query.sso === 'string' && (
+        <p role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {router.query.sso}
+        </p>
+      )}
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
           <label className="label">Email</label>

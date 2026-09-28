@@ -98,17 +98,20 @@ model User {
   reviewedInvoices        Invoice[]
   approvedPayments        Payment[]
   agentActionsReviewed    AgentAction[]
+  auditLogs               AuditLog[]
+  tablePreferences        TablePreference[]
+  savedFilters            SavedFilter[]
 }
 
 model Team {
-  id           String   @id @default(uuid())
-  name         String
-  slug         String   @unique
-  domain       String?  @unique
-  defaultRole  Role     @default(REQUESTER)
-  currency     String   @default("USD")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  domain      String?  @unique
+  defaultRole Role     @default(REQUESTER)
+  currency    String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   members           TeamMember[]
   invitations       Invitation[]
@@ -126,6 +129,14 @@ model Team {
   payments          Payment[]
   agentPolicy       AgentPolicy?
   agentActions      AgentAction[]
+  apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
+  savedFilters      SavedFilter[]
+  connections       Connection[]
+  outboundEvents    OutboundEvent[]
+  accountingLinks   AccountingLink[]
+  punchoutCatalogs  PunchoutCatalog[]
+  punchoutSessions  PunchoutSession[]
 
   @@index([domain])
 }
@@ -173,7 +184,7 @@ model Department {
   costCenter String?
   createdAt  DateTime @default(now())
 
-  team         Team                   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team         Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
   members      TeamMember[]
   budgets      Budget[]
   requisitions PurchaseRequisition[]
@@ -192,9 +203,9 @@ model ProcurementCategory {
   name     String
   parentId String?
 
-  team             Team                   @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  parent           ProcurementCategory?   @relation("CategoryParent", fields: [parentId], references: [id])
-  children         ProcurementCategory[]  @relation("CategoryParent")
+  team             Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  parent           ProcurementCategory?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children         ProcurementCategory[] @relation("CategoryParent")
   vendors          Vendor[]
   requisitionLines RequisitionLineItem[]
 
@@ -234,9 +245,9 @@ model Vendor {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @default(now()) @updatedAt
 
-  team               Team                       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  category           ProcurementCategory?       @relation(fields: [categoryId], references: [id])
-  createdBy          User                       @relation(fields: [createdById], references: [id])
+  team               Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  category           ProcurementCategory?      @relation(fields: [categoryId], references: [id])
+  createdBy          User                      @relation(fields: [createdById], references: [id])
   contacts           VendorContact[]
   rfqInvites         RFQVendor[]
   quotes             Quote[]
@@ -245,6 +256,7 @@ model Vendor {
   invoices           Invoice[]
   payments           Payment[]
   performanceReviews VendorPerformanceReview[]
+  punchoutCatalog    PunchoutCatalog?
 
   @@unique([teamId, name])
   @@index([teamId])
@@ -351,21 +363,24 @@ enum RequisitionStatus {
 }
 
 model PurchaseRequisition {
-  id            String            @id @default(uuid())
-  teamId        String
-  departmentId  String?
-  budgetId      String?
-  requesterId   String
-  title         String
-  justification String?
-  status        RequisitionStatus @default(DRAFT)
-  currency      String            @default("USD")
-  totalAmount   Decimal           @default(0) @db.Decimal(14, 2)
-  neededBy      DateTime?
-  submittedAt   DateTime?
-  decidedAt     DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @default(now()) @updatedAt
+  id                String            @id @default(uuid())
+  teamId            String
+  departmentId      String?
+  budgetId          String?
+  requesterId       String
+  title             String
+  justification     String?
+  status            RequisitionStatus @default(DRAFT)
+  currency          String            @default("USD")
+  totalAmount       Decimal           @default(0) @db.Decimal(14, 2)
+  neededBy          DateTime?
+  // Set by connected systems (e.g. "store:<id>:<sku>:<date>") so a retried
+  // request never raises the same requisition twice.
+  externalReference String?
+  submittedAt       DateTime?
+  decidedAt         DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @default(now()) @updatedAt
 
   team          Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
   department    Department?               @relation(fields: [departmentId], references: [id])
@@ -376,6 +391,7 @@ model PurchaseRequisition {
   purchaseOrder PurchaseOrder?
   agentActions  AgentAction[]
 
+  @@unique([teamId, externalReference])
   @@index([teamId])
   @@index([requesterId])
   @@index([status])
@@ -385,13 +401,16 @@ model RequisitionLineItem {
   id                String  @id @default(uuid())
   requisitionId     String
   categoryId        String?
+  // Set when the line comes from a connected store or inventory system, so
+  // goods received against it can be matched back to that product.
+  sku               String?
   description       String
   quantity          Decimal @db.Decimal(12, 2)
   unit              String?
   estimatedPrice    Decimal @db.Decimal(14, 2)
   suggestedVendorId String?
 
-  requisition PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  requisition PurchaseRequisition  @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
   category    ProcurementCategory? @relation(fields: [categoryId], references: [id])
 
   @@index([requisitionId])
@@ -401,14 +420,14 @@ model RequisitionLineItem {
 // roles. AI auto-approval (AgentPolicy) can only ever short-circuit steps
 // within a band it's explicitly allowed to touch — see lib/ai/policy.ts.
 model ApprovalWorkflow {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   teamId        String
   name          String
-  minAmount     Decimal   @default(0) @db.Decimal(14, 2)
-  maxAmount     Decimal?  @db.Decimal(14, 2)
+  minAmount     Decimal  @default(0) @db.Decimal(14, 2)
+  maxAmount     Decimal? @db.Decimal(14, 2)
   approverRoles Role[]
-  isDefault     Boolean   @default(false)
-  createdAt     DateTime  @default(now())
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
@@ -434,7 +453,7 @@ model RequisitionApprovalStep {
   comment       String?
 
   requisition PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  approver    User?                @relation(fields: [approverId], references: [id])
+  approver    User?               @relation(fields: [approverId], references: [id])
   actions     ApprovalAction[]
 
   @@unique([requisitionId, stepOrder])
@@ -451,7 +470,7 @@ model ApprovalAction {
   createdAt    DateTime           @default(now())
 
   step  RequisitionApprovalStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  actor User?                    @relation(fields: [actorId], references: [id])
+  actor User?                   @relation(fields: [actorId], references: [id])
 
   @@index([stepId])
 }
@@ -655,6 +674,7 @@ model PurchaseOrder {
 model POLineItem {
   id          String  @id @default(uuid())
   poId        String
+  sku         String?
   description String
   quantity    Decimal @db.Decimal(12, 2)
   unit        String?
@@ -817,6 +837,13 @@ model AgentPolicy {
   autoMatchTolerancePct    Float    @default(2.0)
   autoDraftRfqOutreach     Boolean  @default(true)
   spendAnomalyThresholdPct Float    @default(25.0)
+  // The model the team's agents run on: anthropic, openai, mistral or local (null: the deployment's default).
+  aiProvider               String?
+  aiModel                  String?
+  // The team's own API key for that provider, encrypted (lib/secrets). Null: use the deployment's key.
+  aiApiKey                 String?
+  // For "local": the model server's OpenAI-compatible address (Ollama, LM Studio, vLLM). Null: LOCAL_AI_URL.
+  aiBaseUrl                String?
   updatedAt                DateTime @default(now()) @updatedAt
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -837,22 +864,47 @@ enum AgentActionStatus {
   EXECUTED
   REJECTED_BY_POLICY
   OVERRIDDEN_BY_HUMAN
+  REVERTED
+  FAILED
 }
 
+// One row per thing an agent did, proposed or noticed. A row with a `tool`
+// is a change that can be applied (and usually undone) through the action
+// registry in lib/actions; a row without one is a finding for people to read.
 model AgentAction {
   id              String            @id @default(uuid())
   teamId          String
   type            AgentActionType
   status          AgentActionStatus @default(PROPOSED)
+  // Which agent acted: approval, invoice-match, nl-requisition, sourcing, spend-anomaly.
+  agent           String?
+  // One-line summary for the inbox, written when the action is proposed.
+  title           String?
   requisitionId   String?
   purchaseOrderId String?
   invoiceId       String?
   input           Json              @default("{}")
   output          Json              @default("{}")
+  // The exact change: an action name from lib/actions and its arguments.
+  tool            String?
+  args            Json?
+  // What applying it produced (ids and previous values), used to undo it.
+  result          Json?
+  evidence        Json              @default("[]")
   reasoning       String?
   confidence      Float?
+  aiModel         String?
+  aiTokens        Int?
+  error           String?
+  // The person whose request produced this action (e.g. a plain-English requisition).
+  requestedById   String?
   reviewedById    String?
   reviewedAt      DateTime?
+  // Null appliedById with appliedAt set means the agent applied it on its own.
+  appliedById     String?
+  appliedAt       DateTime?
+  revertedById    String?
+  revertedAt      DateTime?
   createdAt       DateTime          @default(now())
 
   team          Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -863,4 +915,261 @@ model AgentAction {
 
   @@index([teamId])
   @@index([type])
+  @@index([teamId, status])
+}
+
+// =========================================================================
+// Server-to-server access (a Humlens Commerce store, scripts)
+// =========================================================================
+
+// Only a SHA-256 hash is stored; the key itself is shown once, when it's
+// created. Calls made with a key act as the member who created it, with
+// that member's role — see lib/apiKey.ts.
+model ApiKey {
+  id          String    @id @default(uuid())
+  teamId      String
+  name        String
+  prefix      String
+  keyHash     String    @unique
+  createdById String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+}
+
+// =========================================================================
+// Audit log — who did what, when, and through which entry point. Written by
+// lib/audit.ts after a mutating request succeeds; never updated or deleted
+// by the app.
+// =========================================================================
+
+enum AuditSource {
+  APP
+  API_KEY
+  MCP
+}
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  teamId      String
+  actorId     String?
+  // Snapshot so the entry still reads correctly after the user is deleted.
+  actorName   String
+  source      AuditSource @default(APP)
+  resource    String
+  action      String
+  targetId    String?
+  targetLabel String?
+  ipAddress   String?
+  createdAt   DateTime    @default(now())
+
+  team  Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, createdAt])
+}
+
+// =========================================================================
+// Per-user UI preferences — the saved layout of each list table (visible,
+// ordered, sized and pinned columns, sorting, grouping, filters, page size,
+// density). Keyed by page route, so it follows the user across teams and
+// devices. Written by /api/me/table-preferences.
+// =========================================================================
+
+model TablePreference {
+  id        String   @id @default(uuid())
+  userId    String
+  tableKey  String
+  view      Json
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tableKey])
+}
+
+// A named set of table filter conditions (lib/advancedFilter.ts) for one list
+// page, kept for its creator or shared with the whole team. Managed through
+// /api/teams/[slug]/saved-filters.
+model SavedFilter {
+  id          String   @id @default(uuid())
+  teamId      String
+  createdById String
+  tableKey    String
+  name        String
+  filter      Json
+  shared      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  team      Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([teamId, tableKey])
+}
+
+// =========================================================================
+// Connected apps — the other Humlens apps this team talks to, and every
+// message sent to them (lib/connections.ts, lib/outbox.ts).
+// =========================================================================
+
+enum ConnectionKind {
+  INVENTORY
+  PROCUREMENT
+  COMMERCE
+  // An accounting system or ERP (QuickBooks, Xero, Sage, NetSuite): see lib/accounting.
+  ACCOUNTING
+  // Outbox target only: cXML orders sent to a supplier's PunchOut order URL (lib/punchout).
+  SUPPLIER
+}
+
+// `secret` is encrypted (lib/secrets.ts): the other app's API key, or for
+// COMMERCE the key that signs notifications sent to the store.
+model Connection {
+  id            String         @id @default(uuid())
+  teamId        String
+  kind          ConnectionKind
+  url           String
+  secret        String
+  options       Json           @default("{}")
+  createdById   String?
+  lastSuccessAt DateTime?
+  lastError     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, kind])
+}
+
+enum OutboundStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Outbox: written in the same step as the change it reports, then delivered
+// with retries, so a slow or offline app never loses an update. `reference`
+// is also what the receiving app de-duplicates on.
+model OutboundEvent {
+  id            String         @id @default(uuid())
+  teamId        String
+  target        ConnectionKind
+  kind          String
+  reference     String
+  payload       Json
+  status        OutboundStatus @default(PENDING)
+  attempts      Int            @default(0)
+  lastError     String?
+  nextAttemptAt DateTime       @default(now())
+  deliveredAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, reference])
+  @@index([status, nextAttemptAt])
+  @@index([teamId, createdAt])
+}
+
+// =========================================================================
+// Accounting and ERP sync (lib/accounting). The connection itself is a
+// Connection of kind ACCOUNTING; this maps each record here to the one it
+// created there, so a retried sync never creates it twice.
+// =========================================================================
+
+enum AccountingRecordKind {
+  VENDOR
+  PURCHASE_ORDER
+  BILL
+  PAYMENT
+}
+
+model AccountingLink {
+  id             String               @id @default(uuid())
+  teamId         String
+  kind           AccountingRecordKind
+  localId        String
+  provider       String
+  externalId     String
+  externalNumber String?
+  syncedAt       DateTime             @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, kind, localId])
+  @@index([teamId, kind])
+}
+
+// =========================================================================
+// PunchOut (lib/punchout): requesters shop a supplier's own site and the cart
+// comes back as requisition lines. cXML or SAP OCI, one catalog per vendor.
+// =========================================================================
+
+enum PunchoutProtocol {
+  CXML
+  OCI
+}
+
+model PunchoutCatalog {
+  id             String           @id @default(uuid())
+  teamId         String
+  vendorId       String           @unique
+  protocol       PunchoutProtocol @default(CXML)
+  setupUrl       String
+  // cXML credentials: From (us, as the supplier knows us), To (the supplier), Sender.
+  fromDomain     String           @default("NetworkID")
+  fromIdentity   String?
+  toDomain       String           @default("NetworkID")
+  toIdentity     String?
+  senderIdentity String?
+  // OCI login name; the password (or cXML SharedSecret) is `secret`, encrypted.
+  username       String?
+  secret         String?
+  // cXML OrderRequest endpoint: issued POs are sent here when sendOrders is on.
+  orderUrl       String?
+  sendOrders     Boolean          @default(false)
+  enabled        Boolean          @default(true)
+  lastError      String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
+
+  team     Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  vendor   Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sessions PunchoutSession[]
+
+  @@index([teamId])
+}
+
+enum PunchoutSessionStatus {
+  STARTED
+  RETURNED
+  FAILED
+}
+
+// One shopping trip. `token` is the unguessable part of the return address
+// the supplier posts the cart to; it works once, for two hours.
+model PunchoutSession {
+  id            String                @id @default(uuid())
+  teamId        String
+  catalogId     String
+  userId        String
+  token         String                @unique
+  requisitionId String?
+  status        PunchoutSessionStatus @default(STARTED)
+  itemCount     Int                   @default(0)
+  error         String?
+  createdAt     DateTime              @default(now())
+  returnedAt    DateTime?
+
+  team    Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  catalog PunchoutCatalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
 }

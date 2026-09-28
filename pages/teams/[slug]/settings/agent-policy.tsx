@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
+import AiModelCard from '@/components/settings/AiModelCard';
 import SettingsLayout from '@/components/settings/SettingsLayout';
 import { settingsTabs } from '@/components/settings/tabs';
 import { apiFetch, apiPut } from '@/lib/fetcher';
@@ -139,6 +140,10 @@ export default function AgentPolicySettings() {
           {loading ? 'Saving…' : 'Save policy'}
         </button>
       </form>
+
+      <div className="mt-6">
+        <AiModelCard slug={slug} />
+      </div>
     </SettingsLayout>
   );
 }

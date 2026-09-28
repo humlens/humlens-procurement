@@ -5,19 +5,27 @@ import { apiPost, apiPut } from '@/lib/fetcher';
 
 type VendorFormValues = { name: string; email: string; phone: string; paymentTerms: string };
 
-// Shared by the vendors list page (create, inside a SidebarModal) and the
-// vendor detail page (edit, inside the same modal) so the field list and
-// submit logic only exist once.
+// Shared by the vendors list page (create, inside a SidebarModal), the
+// vendor detail page (edit, inside the same modal), and the new purchase
+// order panel (quick create, inline) so the field list and submit logic only
+// exist once.
 export default function VendorForm({
   slug,
   vendorId,
   initialValues,
   onSuccess,
+  onCancel,
+  activate = false,
+  submitLabel,
 }: {
   slug: string;
   vendorId?: string;
   initialValues?: Partial<VendorFormValues>;
-  onSuccess: (vendor: { id: string }) => void;
+  onSuccess: (vendor: { id: string; name: string; status: string }) => void;
+  onCancel?: () => void;
+  /** Create the vendor already approved (Active) — the API only allows this for members who can approve vendors. */
+  activate?: boolean;
+  submitLabel?: string;
 }) {
   const [form, setForm] = useState<VendorFormValues>({
     name: initialValues?.name ?? '',
@@ -31,9 +39,10 @@ export default function VendorForm({
     e.preventDefault();
     setLoading(true);
     try {
+      type Saved = { id: string; name: string; status: string };
       const vendor = vendorId
-        ? await apiPut<{ id: string }>(`/api/teams/${slug}/vendors/${vendorId}`, form)
-        : await apiPost<{ id: string }>(`/api/teams/${slug}/vendors`, form);
+        ? await apiPut<Saved>(`/api/teams/${slug}/vendors/${vendorId}`, form)
+        : await apiPost<Saved>(`/api/teams/${slug}/vendors`, activate ? { ...form, activate: true } : form);
       toast.success(vendorId ? 'Vendor updated.' : 'Vendor created.');
       onSuccess(vendor);
     } catch (err) {
@@ -47,7 +56,13 @@ export default function VendorForm({
     <form onSubmit={submit} className="space-y-4">
       <div>
         <label className="label">Name</label>
-        <input className="input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input
+          className="input"
+          required
+          autoFocus={Boolean(onCancel)}
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+        />
       </div>
       <div>
         <label className="label">Email</label>
@@ -70,9 +85,16 @@ export default function VendorForm({
           onChange={(e) => setForm({ ...form, paymentTerms: e.target.value })}
         />
       </div>
-      <button className="btn-primary w-full" type="submit" disabled={loading}>
-        {loading ? (vendorId ? 'Saving…' : 'Creating…') : vendorId ? 'Save changes' : 'Create vendor'}
-      </button>
+      <div className="flex gap-2">
+        {onCancel && (
+          <button className="btn-secondary flex-1" type="button" onClick={onCancel} disabled={loading}>
+            Cancel
+          </button>
+        )}
+        <button className="btn-primary flex-1" type="submit" disabled={loading}>
+          {loading ? (vendorId ? 'Saving…' : 'Creating…') : (submitLabel ?? (vendorId ? 'Save changes' : 'Create vendor'))}
+        </button>
+      </div>
     </form>
   );
 }

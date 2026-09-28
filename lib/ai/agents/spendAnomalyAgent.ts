@@ -3,7 +3,7 @@ import { generateText } from 'ai';
 import { prisma } from '@/lib/prisma';
 import { logAgentAction } from 'models/agentAction';
 import { getSpendAnomalyThresholdPct } from '@/lib/ai/policy';
-import { agentModel } from '@/lib/ai/provider';
+import { getAgentModel } from '@/lib/ai/provider';
 
 function monthRange(monthsAgo: number) {
   const now = new Date();
@@ -69,15 +69,28 @@ export async function runSpendAnomalyAgent(teamId: string) {
     )
     .join('\n');
 
-  const { text } = await generateText({
-    model: agentModel,
+  const ai = await getAgentModel(teamId);
+
+  const { text, usage } = await generateText({
+    model: ai.model,
     prompt: `Summarize this spend anomaly finding for a procurement dashboard in 2-3 sentences, plain language, no markdown:\n\n${summaryLines}`,
+  });
+
+  // Today's finding replaces any earlier one nobody has read yet.
+  await prisma.agentAction.updateMany({
+    where: { teamId, type: 'SPEND_ANOMALY_ALERT', tool: null, reviewedAt: null },
+    data: { reviewedAt: new Date() },
   });
 
   return logAgentAction({
     teamId,
     type: 'SPEND_ANOMALY_ALERT',
     status: 'EXECUTED',
+    agent: 'spend-anomaly',
+    title: `Unusual spend with ${anomalies.length} vendor${anomalies.length === 1 ? '' : 's'} this month`,
+    evidence: anomalies.slice(0, 4).map((a) => ({ label: vendorName(a.vendorId), value: `${a.variancePct > 0 ? '+' : ''}${a.variancePct.toFixed(0)}%` })),
+    aiModel: ai.id,
+    aiTokens: usage?.totalTokens,
     input: { thresholdPct },
     output: { anomalies },
     reasoning: text,

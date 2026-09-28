@@ -15,7 +15,7 @@ export default function NewTeam() {
     setLoading(true);
     try {
       const team = await apiPost<{ slug: string }>('/api/teams', { name });
-      router.push(`/teams/${team.slug}/dashboard`);
+      router.push(`/teams/${team.slug}/inbox`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong.');
     } finally {

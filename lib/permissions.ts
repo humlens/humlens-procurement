@@ -35,7 +35,8 @@ export type Resource =
   | 'invoice'
   | 'payment'
   | 'agent_policy'
-  | 'agent_action';
+  | 'agent_action'
+  | 'audit_log';
 
 export type Permission = {
   resource: Resource;
@@ -74,6 +75,7 @@ export const permissions: RolePermissions = {
     { resource: 'payment', actions: '*' },
     { resource: 'agent_policy', actions: '*' },
     { resource: 'agent_action', actions: '*' },
+    { resource: 'audit_log', actions: ['read'] },
   ],
   ADMIN: [
     { resource: 'team', actions: ['read', 'update'] },
@@ -93,6 +95,7 @@ export const permissions: RolePermissions = {
     { resource: 'payment', actions: ['read', 'create'] },
     { resource: 'agent_policy', actions: '*' },
     { resource: 'agent_action', actions: ['read', 'approve', 'reject'] },
+    { resource: 'audit_log', actions: ['read'] },
   ],
   APPROVER: [
     { resource: 'team', actions: ['read', 'leave'] },
@@ -144,6 +147,7 @@ export const permissions: RolePermissions = {
     { resource: 'invoice', actions: ['read'] },
     { resource: 'payment', actions: ['read'] },
     { resource: 'agent_action', actions: ['read'] },
+    { resource: 'audit_log', actions: ['read'] },
   ],
 };
 

@@ -3,6 +3,7 @@ import { POStatus, RequisitionStatus } from '@prisma/client';
 
 import { ApiError } from '@/lib/errors';
 import { applyBudgetTransaction } from './budget';
+import { afterPurchaseOrderChange, afterPurchaseOrderIssued } from '@/lib/operations';
 
 export const listPurchaseOrders = async (teamId: string, params?: { status?: POStatus }) => {
   return prisma.purchaseOrder.findMany({
@@ -34,6 +35,23 @@ const nextPoNumber = async (teamId: string) => {
   return `PO-${String(count + 1).padStart(5, '0')}`;
 };
 
+// Requisition lines raised by a connected store carry a SKU. The PO form copies
+// the lines but lets people edit them, so match by description first and fall
+// back to position when the line count is unchanged.
+const carrySkus = <T extends { sku?: string; description: string }>(
+  lines: T[],
+  requisitionLines: { sku: string | null; description: string }[]
+): T[] => {
+  const normalise = (text: string) => text.trim().toLowerCase();
+  return lines.map((line, index) => {
+    if (line.sku) return line;
+    const match =
+      requisitionLines.find((candidate) => candidate.sku && normalise(candidate.description) === normalise(line.description)) ??
+      (lines.length === requisitionLines.length ? requisitionLines[index] : undefined);
+    return match?.sku ? { ...line, sku: match.sku } : line;
+  });
+};
+
 export const createPurchaseOrder = async (params: {
   teamId: string;
   createdById: string;
@@ -47,19 +65,27 @@ export const createPurchaseOrder = async (params: {
   notes?: string;
   tax: number;
   shipping: number;
-  lineItems: { description: string; quantity: number; unit?: string; unitPrice: number }[];
+  lineItems: { sku?: string; description: string; quantity: number; unit?: string; unitPrice: number }[];
 }) => {
+  // The vendor must be this team's, and not blocked.
+  const vendor = await prisma.vendor.findFirst({ where: { id: params.vendorId, teamId: params.teamId }, select: { status: true } });
+  if (!vendor) throw new ApiError(400, 'Vendor not found.');
+  if (vendor.status === 'BLOCKED') throw new ApiError(400, 'This vendor is blocked. Choose another vendor.');
+
   const subtotal = params.lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
   const totalAmount = subtotal + params.tax + params.shipping;
   const poNumber = await nextPoNumber(params.teamId);
 
+  let lineItems = params.lineItems;
   if (params.requisitionId) {
     const requisition = await prisma.purchaseRequisition.findFirstOrThrow({
       where: { id: params.requisitionId, teamId: params.teamId },
+      include: { lineItems: true },
     });
     if (requisition.status !== RequisitionStatus.APPROVED) {
       throw new ApiError(400, 'The linked requisition must be approved before creating a PO.');
     }
+    lineItems = carrySkus(lineItems, requisition.lineItems);
   }
 
   const po = await prisma.purchaseOrder.create({
@@ -79,7 +105,7 @@ export const createPurchaseOrder = async (params: {
       shippingAddress: params.shippingAddress,
       billingAddress: params.billingAddress,
       notes: params.notes,
-      lineItems: { create: params.lineItems },
+      lineItems: { create: lineItems },
     },
     include: { lineItems: true },
   });
@@ -89,6 +115,7 @@ export const createPurchaseOrder = async (params: {
       where: { id: params.requisitionId },
       data: { status: RequisitionStatus.CONVERTED_TO_PO },
     });
+    void afterPurchaseOrderChange(params.teamId, po.id);
   }
 
   return po;
@@ -101,10 +128,12 @@ export const approvePurchaseOrder = async (teamId: string, id: string, approvedB
     throw new ApiError(400, 'Only draft or pending purchase orders can be approved.');
   }
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id },
     data: { status: POStatus.APPROVED, approvedById, approvedAt: new Date() },
   });
+  void afterPurchaseOrderChange(teamId, id);
+  return updated;
 };
 
 export const issuePurchaseOrder = async (teamId: string, id: string) => {
@@ -124,10 +153,13 @@ export const issuePurchaseOrder = async (teamId: string, id: string) => {
     });
   }
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id },
     data: { status: POStatus.ISSUED, issuedAt: new Date() },
   });
+  void afterPurchaseOrderChange(teamId, id);
+  void afterPurchaseOrderIssued(teamId, id);
+  return updated;
 };
 
 export const cancelPurchaseOrder = async (teamId: string, id: string) => {
@@ -148,5 +180,7 @@ export const cancelPurchaseOrder = async (teamId: string, id: string) => {
     });
   }
 
-  return prisma.purchaseOrder.update({ where: { id }, data: { status: POStatus.CANCELLED } });
+  const updated = await prisma.purchaseOrder.update({ where: { id }, data: { status: POStatus.CANCELLED } });
+  void afterPurchaseOrderChange(teamId, id);
+  return updated;
 };

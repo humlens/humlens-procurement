@@ -3,10 +3,12 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { throwIfNoTeamAccess } from 'models/team';
 import { can, Action, Resource } from '@/lib/permissions';
 import { ApiError } from '@/lib/errors';
+import { auditOnSuccess } from '@/lib/audit';
 
 // Resolves team membership for req.query.slug and checks the member's role
 // against the requested resource/action. Throws ApiError(403) on denial so
-// route handlers can just await this and proceed.
+// route handlers can just await this and proceed. A mutating request that
+// gets past this check is written to the audit log once it succeeds.
 export async function guardTeamAccess(
   req: NextApiRequest,
   res: NextApiResponse,
@@ -18,6 +20,8 @@ export async function guardTeamAccess(
   if (!can(teamMember.role, resource, action)) {
     throw new ApiError(403, `You do not have permission to ${action} ${resource}.`);
   }
+
+  auditOnSuccess(req, res, { teamId: teamMember.teamId, actor: teamMember.user, resource, action });
 
   return teamMember;
 }

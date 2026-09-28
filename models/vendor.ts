@@ -38,6 +38,7 @@ export const createVendor = async (params: {
   phone?: string;
   paymentTerms?: string;
   preferredCurrency?: string;
+  status?: VendorStatus;
 }) => {
   return prisma.vendor.create({ data: params });
 };
