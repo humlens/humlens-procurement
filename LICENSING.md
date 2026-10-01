@@ -6,6 +6,10 @@ Humlens Procurement is open source under the **GNU Affero General Public License
 (AGPL-3.0-only). The full text is in [`LICENSE`](LICENSE). A commercial licence is available for
 anyone who can't accept the AGPL's terms.
 
+The source code is at https://github.com/humlens/humlens-procurement. The other Makeships apps, all under
+the same terms, are at https://github.com/humlens: Commerce (`humlens-commerce`), Inventory
+(`humlens-inventory`) and Procurement (`humlens-procurement`).
+
 This file explains what that means in practice. If it ever disagrees with `LICENSE` or a signed
 agreement, those win.
 
