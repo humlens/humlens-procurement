@@ -26,6 +26,7 @@ export const getPurchaseOrder = async (teamId: string, id: string) => {
       lineItems: true,
       goodsReceipts: { include: { lineItems: true }, orderBy: { receivedAt: 'desc' } },
       invoices: true,
+      vendorReturns: { select: { id: true, returnNumber: true, status: true, receiptId: true }, orderBy: { createdAt: 'desc' } },
     },
   });
 };
@@ -63,6 +64,7 @@ export const createPurchaseOrder = async (params: {
   shippingAddress?: string;
   billingAddress?: string;
   notes?: string;
+  expectedDeliveryDate?: Date;
   tax: number;
   shipping: number;
   lineItems: { sku?: string; description: string; quantity: number; unit?: string; unitPrice: number }[];
@@ -105,6 +107,7 @@ export const createPurchaseOrder = async (params: {
       shippingAddress: params.shippingAddress,
       billingAddress: params.billingAddress,
       notes: params.notes,
+      expectedDeliveryDate: params.expectedDeliveryDate,
       lineItems: { create: lineItems },
     },
     include: { lineItems: true },
@@ -119,6 +122,18 @@ export const createPurchaseOrder = async (params: {
   }
 
   return po;
+};
+
+// The promised delivery date is the one thing people change after creating a
+// PO (the vendor confirms or moves it). Cleared with null. Not sent on to the
+// supplier or the accounting system again once the PO has gone out.
+export const setPurchaseOrderDeliveryDate = async (teamId: string, id: string, expectedDeliveryDate: Date | null) => {
+  const po = await prisma.purchaseOrder.findFirstOrThrow({ where: { id, teamId } });
+  const closedStatuses: POStatus[] = [POStatus.CLOSED, POStatus.CANCELLED];
+  if (closedStatuses.includes(po.status)) {
+    throw new ApiError(400, 'This purchase order is closed, so its delivery date can no longer change.');
+  }
+  return prisma.purchaseOrder.update({ where: { id }, data: { expectedDeliveryDate } });
 };
 
 export const approvePurchaseOrder = async (teamId: string, id: string, approvedById: string) => {

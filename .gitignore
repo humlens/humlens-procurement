@@ -12,6 +12,9 @@
 .env
 .env*.local
 
+# yarn
+.yarn
+
 # prisma
 /prisma/node_modules
 

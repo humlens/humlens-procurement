@@ -26,6 +26,7 @@ type PO = {
   status: string;
   currency: string;
   totalAmount: string | number;
+  expectedDeliveryDate: string | null;
   createdAt: string;
   vendor?: { name: string };
 };
@@ -57,6 +58,7 @@ export default function PurchaseOrders({ role }: { role: Role }) {
   // can add one here already active, so it's usable on this order at once.
   const canAddVendor = can(role, 'vendor', 'create') && can(role, 'vendor', 'update');
   const [lineItems, setLineItems] = useState<LineItem[]>([blankLine]);
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [creating, setCreating] = useState(false);
 
   const { data: vendors } = useQuery({
@@ -93,6 +95,7 @@ export default function PurchaseOrders({ role }: { role: Role }) {
     setVendorId('');
     setNewVendorOpen(false);
     setLineItems([blankLine]);
+    setExpectedDeliveryDate('');
     if (requisitionId) {
       const { requisitionId: _r, ...rest } = router.query;
       router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
@@ -122,6 +125,7 @@ export default function PurchaseOrders({ role }: { role: Role }) {
         currency: 'USD',
         tax: 0,
         shipping: 0,
+        expectedDeliveryDate: expectedDeliveryDate || undefined,
         lineItems: lineItems.filter((li) => li.description),
       });
       setCreateOpen(false);
@@ -155,6 +159,13 @@ export default function PurchaseOrders({ role }: { role: Role }) {
         header: 'Status',
         size: 170,
         cell: ({ getValue }) => <Badge status={getValue<string>()} />,
+      },
+      {
+        accessorKey: 'expectedDeliveryDate',
+        header: 'Promised by',
+        size: 140,
+        // A date without a time, so show it as stored rather than shifted to local time.
+        cell: ({ getValue }) => (getValue<string | null>() ? new Date(getValue<string>()).toLocaleDateString(undefined, { timeZone: 'UTC' }) : '—'),
       },
       {
         accessorKey: 'createdAt',
@@ -250,6 +261,20 @@ export default function PurchaseOrders({ role }: { role: Role }) {
           </div>
 
           <form id="new-po-form" onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="label" htmlFor="po-delivery-date">
+                Promised delivery date <span className="font-normal text-gray-400">(optional)</span>
+              </label>
+              <input
+                id="po-delivery-date"
+                className="input sm:w-56"
+                type="date"
+                value={expectedDeliveryDate}
+                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-gray-500">Counts towards the vendor&apos;s on-time delivery rate.</p>
+            </div>
+
             <div>
               <label className="label">Line items</label>
               <div className="space-y-2">

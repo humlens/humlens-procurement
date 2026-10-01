@@ -87,6 +87,14 @@ export const createBudgetSchema = z.object({
   currency: z.string().default('USD'),
 });
 
+// A calendar date, "2026-10-15" (a full ISO timestamp is accepted and its
+// date part kept). Stored as that date at 00:00 UTC.
+export const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}(T.*)?$/, 'Use a date like 2026-10-15.')
+  .transform((value) => new Date(`${value.slice(0, 10)}T00:00:00.000Z`))
+  .refine((date) => !Number.isNaN(date.getTime()), 'Use a date like 2026-10-15.');
+
 export const createPurchaseOrderSchema = z.object({
   vendorId: z.string().min(1),
   requisitionId: z.string().optional(),
@@ -96,6 +104,8 @@ export const createPurchaseOrderSchema = z.object({
   shippingAddress: z.string().optional(),
   billingAddress: z.string().optional(),
   notes: z.string().optional(),
+  // When the vendor promised to deliver; drives the scorecard's on-time rate.
+  expectedDeliveryDate: calendarDateSchema.optional(),
   lineItems: z
     .array(
       z.object({
@@ -109,6 +119,17 @@ export const createPurchaseOrderSchema = z.object({
   tax: z.number().nonnegative().default(0),
   shipping: z.number().nonnegative().default(0),
 });
+
+// The promised date can be set or cleared (null) until the PO is closed.
+export const updatePurchaseOrderSchema = z.object({
+  expectedDeliveryDate: calendarDateSchema.nullable(),
+});
+
+export const vendorReturnActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('send') }),
+  z.object({ action: z.literal('cancel') }),
+  z.object({ action: z.literal('credit'), amount: z.number().nonnegative(), reference: z.string().max(100).optional() }),
+]);
 
 export const createRfqSchema = z.object({
   title: z.string().min(1).max(200),

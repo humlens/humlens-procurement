@@ -38,6 +38,7 @@ export async function deliverSupplierOrder(event: OutboundEvent) {
     billToName: po.team.name,
     shipTo: po.shippingAddress,
     comments: po.notes,
+    deliveryDate: po.expectedDeliveryDate,
     lines: po.lineItems.map((line, index) => ({
       lineNumber: index + 1,
       supplierPartId: line.sku,

@@ -49,6 +49,7 @@ const agentNames: Record<string, string> = {
   'nl-requisition': 'Plain-English request',
   sourcing: 'Sourcing agent',
   'spend-anomaly': 'Spend agent',
+  'vendor-return': 'Return-to-vendor agent',
 };
 
 function timeAgo(value: string) {

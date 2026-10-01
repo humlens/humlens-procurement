@@ -13,6 +13,7 @@ import {
   FileSearch,
   FileSignature,
   PackageCheck,
+  PackageX,
   Receipt,
   CreditCard,
   Sparkles,
@@ -62,6 +63,7 @@ const navGroups: NavGroup[] = [
     label: 'Fulfill',
     items: [
       { href: 'receiving', label: 'Receiving', icon: PackageCheck, tone: 'teal' },
+      { href: 'vendor-returns', label: 'Returns to vendor', icon: PackageX, tone: 'amber' },
       { href: 'invoices', label: 'Invoices', icon: Receipt, tone: 'orange' },
       { href: 'payments', label: 'Payments', icon: CreditCard, tone: 'indigo' },
     ],

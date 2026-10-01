@@ -70,6 +70,7 @@ export function xero(ctx: AdapterContext): AccountingAdapter {
           {
             Contact: { ContactID: po.vendorExternalId },
             Date: isoDate(po.date),
+            ...(po.deliveryDate ? { DeliveryDate: isoDate(po.deliveryDate) } : {}),
             PurchaseOrderNumber: po.number,
             Reference: 'Humlens Procurement',
             CurrencyCode: po.currency,

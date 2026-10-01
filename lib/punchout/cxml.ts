@@ -65,9 +65,12 @@ export function orderRequest(params: {
   billToName: string;
   shipTo?: string | null;
   comments?: string | null;
+  // The promised delivery date, sent as each line's requestedDeliveryDate.
+  deliveryDate?: Date | null;
   lines: OrderLine[];
 }) {
   const money = (value: number) => `<Money currency="${escapeXml(params.currency)}">${value.toFixed(2)}</Money>`;
+  const requested = params.deliveryDate ? ` requestedDeliveryDate="${params.deliveryDate.toISOString().slice(0, 10)}"` : '';
   const comments = [params.shipTo ? `Ship to: ${params.shipTo}` : '', params.comments ?? ''].filter(Boolean).join('\n');
   return envelope(
     header(params.credentials) +
@@ -80,7 +83,7 @@ export function orderRequest(params: {
       params.lines
         .map(
           (line) =>
-            `<ItemOut quantity="${line.quantity}" lineNumber="${line.lineNumber}">` +
+            `<ItemOut quantity="${line.quantity}" lineNumber="${line.lineNumber}"${requested}>` +
             `<ItemID><SupplierPartID>${escapeXml(line.supplierPartId ?? `LINE-${line.lineNumber}`)}</SupplierPartID></ItemID>` +
             `<ItemDetail><UnitPrice>${money(line.unitPrice)}</UnitPrice><Description xml:lang="en">${escapeXml(line.description)}</Description>` +
             `<UnitOfMeasure>${escapeXml(line.unit || 'EA')}</UnitOfMeasure></ItemDetail>` +

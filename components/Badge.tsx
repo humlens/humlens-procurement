@@ -55,6 +55,7 @@ const statusTone: Record<string, Tone> = {
   REJECTED_BY_POLICY: 'neutral',
   OVERRIDDEN_BY_HUMAN: 'purple',
   DELIVERED: 'success',
+  CREDITED: 'success',
   UNDER_REVIEW: 'warning',
 };
 

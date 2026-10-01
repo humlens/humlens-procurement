@@ -63,6 +63,7 @@ export const proposeAction = async (params: {
   args: unknown;
   reasoning: string;
   requisitionId?: string;
+  purchaseOrderId?: string;
   invoiceId?: string;
   evidence?: Evidence;
   confidence?: number;
@@ -85,6 +86,7 @@ export const proposeAction = async (params: {
       tool: params.tool,
       args: args as Prisma.InputJsonValue,
       requisitionId: params.requisitionId,
+      purchaseOrderId: params.purchaseOrderId,
       invoiceId: params.invoiceId,
       evidence: params.evidence ?? [],
       reasoning: params.reasoning,

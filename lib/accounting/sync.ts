@@ -127,6 +127,7 @@ async function syncRecord(teamId: string, adapter: AccountingAdapter, options: A
           currency: po.currency,
           vendorExternalId,
           memo: po.notes,
+          deliveryDate: po.expectedDeliveryDate,
           lines: withExtras(lines, { tax: num(po.tax), shipping: num(po.shipping) }),
         },
         options

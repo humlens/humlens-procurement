@@ -54,10 +54,12 @@ never apply a change twice.
 | Method and path | Called by | What it does |
 |---|---|---|
 | `GET /team` | Commerce, Procurement | Checks the key and names the team. |
-| `GET /items`, `GET /stock` | Commerce | Reads items and stock levels by SKU for the stock sync. |
+| `GET /items`, `GET /stock` | Commerce | Reads items and stock levels by SKU for the stock sync. `costPrice` is the item's moving-average cost in major units (rupees, two decimals) of the store's currency; `0` means no cost yet. The store keeps it on the product in minor units to show margin and to stop markdowns going below cost. |
 | `POST /reservations` | Commerce | Holds stock for a checkout. Reference `store:txn:<id>`. Fails with the lines that are short when stock is insufficient. |
-| `POST /reservations/release` | Commerce | `{ reference }`: releases a hold when payment fails or the checkout is abandoned. Holds also expire on their own. |
-| `POST /stock-movements` | Commerce, Procurement | Records a movement. Commerce sends `type: "issue"` for a paid order, naming its hold in `reservation`, which consumes it. Procurement sends `type: "receipt"` with reference `procurement:receipt:<id>` when goods are received. |
+| `GET /reservations?status=ACTIVE&purpose=orders[&warehouseId=]` | Commerce | Holds kept for placed orders waiting to ship (the pick list), oldest first: `[{ id, reference, purpose: "order", warehouse: { id, name }, lines: [{ itemId, sku, name, quantity }], units, createdAt, expiresAt }]`. A hold counts as an order's when it was committed, i.e. it runs longer than the 24-hour checkout maximum. `GET ?reference=` is unchanged. |
+| `POST /reservations/commit` | Commerce | `{ reference }`: the checkout became an order waiting to be picked and shipped. Keeps an active hold for up to 90 days instead of letting it expire. Returns the reservation, or `null` when there is none. |
+| `POST /reservations/release` | Commerce | `{ reference }`: releases a hold when payment fails, the checkout is abandoned, or the order is cancelled before it ships. Holds also expire on their own. |
+| `POST /stock-movements` | Commerce, Procurement | Records a movement. Commerce sends `type: "issue"` with reference `store:order:<id>` when an order ships (right away for orders with nothing to ship, or whose checkout couldn't hold stock), naming its hold in `reservation`, which consumes it. It sends `type: "receipt"` with reference `store:opening:<sku>` for the opening stock of a store product Inventory didn't have. Procurement sends `type: "receipt"` with reference `procurement:receipt:<id>` when goods are received. |
 | `POST /item-costs` | Procurement | Sends `{ reference, lines: [{ sku, quantity, unitCost }] }` from an approved invoice. Inventory updates each item's moving-average cost. Reference `procurement:invoice:<id>`. |
 | `PUT /webhook`, `DELETE /webhook` | Commerce | Registers or removes the store's webhook: `{ url, secret }`, where the secret is at least 32 characters. |
 
@@ -67,7 +69,7 @@ never apply a change twice.
 |---|---|---|
 | `GET /team` | Commerce, Inventory | Checks the key and names the team. |
 | `POST /requisitions` | Inventory, Commerce | Raises a purchase request: `{ title, justification, externalReference, submit, lines: [{ sku, description, quantity, unit }] }`. Inventory's reorder uses reference `inventory:reorder:<day>:<hash>`; the store's use `store:...`. |
-| `GET /requisitions`, `GET /goods-receipts` | Commerce | Reads status for the store's sync. |
+| `GET /requisitions`, `GET /goods-receipts` | Commerce | Reads status for the store's sync. Each receipt line carries its free-text `condition`. Only lines whose condition is empty or means it arrived fine (`good`, `ok`, `okay`, `fine`, `accepted`, `intact`, any case) become stock, whichever app sends them to Inventory. |
 | `PUT /webhook`, `DELETE /webhook` | Commerce | As in Inventory. |
 
 ## 2. Webhooks to Commerce
@@ -96,6 +98,7 @@ seconds from its own clock. Any `2xx` response counts as delivered.
 | Event | Sent by | `data` |
 |---|---|---|
 | `stock.changed` | Inventory | `{ skus: string[] }`. Changes still waiting to be sent are merged into one message. The store then re-reads stock for those SKUs. |
+| `stock.idle` | Inventory | `{ thresholdDays, items: [{ sku, onHand, lastIssueAt, idleDays }] }`, from the dead-stock agent: items with stock on hand and no sales for longer than the threshold. The store proposes a markdown on each one it sells, for a person to approve, and doesn't propose the same SKU again for 30 days. |
 | `receipt.created` | Procurement | `{ receiptId, poNumber }` |
 | `requisition.updated` | Procurement | `{ requisitionId, externalReference, status, ... }`, only for requests the store raised (`externalReference` starts with `store:`). |
 

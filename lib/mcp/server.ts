@@ -248,6 +248,7 @@ export function createProcurementMcpServer() {
         currency: z.string().default('USD'),
         tax: z.number().nonnegative().default(0),
         shipping: z.number().nonnegative().default(0),
+        expectedDeliveryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Date the vendor promised to deliver by, e.g. 2026-10-15'),
         lineItems: z
           .array(
             z.object({
@@ -260,10 +261,20 @@ export function createProcurementMcpServer() {
           .min(1),
       },
     },
-    async ({ teamSlug, actingUserEmail, ...params }) => {
+    async ({ teamSlug, actingUserEmail, expectedDeliveryDate, ...params }) => {
       const actor = await guardMcpAction(teamSlug, actingUserEmail, 'purchase_order', 'create');
       return json(
-        await auditMcp(actor, 'purchase_order', 'create', createPurchaseOrder({ teamId: actor.team.id, createdById: actor.user.id, ...params }))
+        await auditMcp(
+          actor,
+          'purchase_order',
+          'create',
+          createPurchaseOrder({
+            teamId: actor.team.id,
+            createdById: actor.user.id,
+            ...params,
+            expectedDeliveryDate: expectedDeliveryDate ? new Date(`${expectedDeliveryDate}T00:00:00.000Z`) : undefined,
+          })
+        )
       );
     }
   );

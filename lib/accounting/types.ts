@@ -80,6 +80,8 @@ export type PurchaseOrderRecord = {
   vendorExternalId: string;
   lines: Line[];
   memo?: string | null;
+  // The promised delivery date, for systems with a field for it (Xero).
+  deliveryDate?: Date | null;
 };
 
 export type BillRecord = {

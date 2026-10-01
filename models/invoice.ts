@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { InvoiceStatus } from '@prisma/client';
 import { afterInvoiceApproved } from '@/lib/operations';
+import { isGoodCondition } from '@/lib/receiving';
 
 export const listInvoices = async (teamId: string, params?: { status?: InvoiceStatus }) => {
   return prisma.invoice.findMany({
@@ -67,7 +68,7 @@ export const createInvoice = async (params: {
 
 export type MatchMismatch = {
   invoiceLineId: string;
-  reason: 'no_po_line' | 'price_variance' | 'over_quantity' | 'not_received';
+  reason: 'no_po_line' | 'price_variance' | 'over_quantity' | 'not_received' | 'damaged';
   detail: string;
 };
 
@@ -75,6 +76,13 @@ export type MatchMismatch = {
 // physically arrived) x Invoice (what the vendor is billing). Shared by the
 // manual "Review match" API route and the autonomous matching agent so both
 // paths apply identical rules — see lib/ai/agents/invoiceMatchAgent.ts.
+//
+// Only units received in good condition count as delivered (see
+// lib/receiving.ts). Billing for units that arrived damaged or wrong is a
+// mismatch that names the credit due; a replacement received in good
+// condition later counts, so it clears once the replacement is booked in.
+// `notes` are for the reviewer and don't fail the match: damaged units that
+// aren't billed, and any returns to vendor on the order.
 export const runThreeWayMatch = async (
   teamId: string,
   invoiceId: string,
@@ -85,26 +93,33 @@ export const runThreeWayMatch = async (
     include: {
       lineItems: true,
       purchaseOrder: {
-        include: { lineItems: true, goodsReceipts: { include: { lineItems: true } } },
+        include: {
+          lineItems: true,
+          goodsReceipts: { include: { lineItems: true } },
+          vendorReturns: { where: { status: { not: 'CANCELLED' } }, include: { lineItems: true }, orderBy: { createdAt: 'asc' } },
+        },
       },
     },
   });
 
   const mismatches: MatchMismatch[] = [];
+  const notes: string[] = [];
 
   if (!invoice.purchaseOrder) {
-    return { matched: false, mismatches: [{ invoiceLineId: '', reason: 'no_po_line', detail: 'Invoice is not linked to a purchase order.' }] as MatchMismatch[] };
+    return { matched: false, mismatches: [{ invoiceLineId: '', reason: 'no_po_line', detail: 'Invoice is not linked to a purchase order.' }] as MatchMismatch[], notes };
   }
 
   const receivedByPoLine = new Map<string, number>();
+  const goodByPoLine = new Map<string, number>();
   for (const receipt of invoice.purchaseOrder.goodsReceipts) {
     for (const line of receipt.lineItems) {
-      receivedByPoLine.set(
-        line.poLineItemId,
-        (receivedByPoLine.get(line.poLineItemId) || 0) + Number(line.quantityReceived)
-      );
+      const quantity = Number(line.quantityReceived);
+      receivedByPoLine.set(line.poLineItemId, (receivedByPoLine.get(line.poLineItemId) || 0) + quantity);
+      if (isGoodCondition(line.condition)) goodByPoLine.set(line.poLineItemId, (goodByPoLine.get(line.poLineItemId) || 0) + quantity);
     }
   }
+  const money = (amount: number) => `${invoice.currency} ${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const billed = new Map<string, number>();
 
   for (const invLine of invoice.lineItems) {
     if (!invLine.poLineItemId) {
@@ -129,29 +144,59 @@ export const runThreeWayMatch = async (
     }
 
     const received = receivedByPoLine.get(poLine.id) || 0;
-    if (Number(invLine.quantity) > received) {
+    const good = goodByPoLine.get(poLine.id) || 0;
+    const quantity = Number(invLine.quantity);
+    billed.set(poLine.id, (billed.get(poLine.id) || 0) + quantity);
+    if (quantity > received) {
       mismatches.push({
         invoiceLineId: invLine.id,
         reason: received === 0 ? 'not_received' : 'over_quantity',
-        detail: `Invoicing ${invLine.quantity} units but only ${received} were received.`,
+        detail:
+          `Invoicing ${invLine.quantity} units but only ${received} were received` +
+          (good < received ? `, ${received - good} of them damaged or wrong.` : '.'),
+      });
+    } else if (quantity > good) {
+      mismatches.push({
+        invoiceLineId: invLine.id,
+        reason: 'damaged',
+        detail:
+          `Invoicing ${invLine.quantity} units of "${poLine.description}" but ${received - good} of the ${received} received arrived damaged or wrong; ` +
+          `only ${good} count as delivered. Credit due: ${money((quantity - good) * Number(poLine.unitPrice))}, unless a replacement is received.`,
       });
     }
   }
 
-  return { matched: mismatches.length === 0, mismatches };
+  // Damaged units the vendor isn't billing for: nothing to dispute, but say so.
+  for (const poLine of invoice.purchaseOrder.lineItems) {
+    const bad = (receivedByPoLine.get(poLine.id) || 0) - (goodByPoLine.get(poLine.id) || 0);
+    const billedHere = billed.get(poLine.id);
+    if (bad > 0 && billedHere !== undefined && billedHere <= (goodByPoLine.get(poLine.id) || 0)) {
+      notes.push(`${bad} unit(s) of "${poLine.description}" arrived damaged or wrong and are not billed on this invoice.`);
+    }
+  }
+  for (const vendorReturn of invoice.purchaseOrder.vendorReturns) {
+    const due = vendorReturn.lineItems.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice), 0);
+    notes.push(
+      vendorReturn.status === 'CREDITED'
+        ? `Return ${vendorReturn.returnNumber}: credited ${money(Number(vendorReturn.creditAmount ?? 0))}${vendorReturn.creditReference ? ` (${vendorReturn.creditReference})` : ''}.`
+        : `Return ${vendorReturn.returnNumber} is ${vendorReturn.status.toLowerCase()}: ${money(due)} credit due from the vendor.`
+    );
+  }
+
+  return { matched: mismatches.length === 0, mismatches, notes };
 };
 
 export const applyMatchResult = async (
   teamId: string,
   invoiceId: string,
-  result: { matched: boolean; mismatches: MatchMismatch[] }
+  result: { matched: boolean; mismatches: MatchMismatch[]; notes?: string[] }
 ) => {
   return prisma.invoice.update({
     where: { id: invoiceId },
     data: {
       status: result.matched ? InvoiceStatus.MATCHED : InvoiceStatus.MISMATCHED,
       matchStatus: result.matched ? '3-way match passed' : `${result.mismatches.length} mismatch(es) found`,
-      matchNotes: result.mismatches.map((m) => m.detail).join('\n') || null,
+      matchNotes: [...result.mismatches.map((m) => m.detail), ...(result.notes ?? [])].join('\n') || null,
     },
   });
 };

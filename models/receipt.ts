@@ -5,7 +5,11 @@ import { afterGoodsReceipt } from '@/lib/operations';
 export const listGoodsReceipts = async (teamId: string, poId?: string) => {
   return prisma.goodsReceipt.findMany({
     where: { teamId, poId },
-    include: { purchaseOrder: { select: { id: true, poNumber: true } }, lineItems: true },
+    include: {
+      purchaseOrder: { select: { id: true, poNumber: true } },
+      lineItems: true,
+      vendorReturns: { where: { status: { not: 'CANCELLED' } }, select: { id: true, returnNumber: true, status: true } },
+    },
     orderBy: { receivedAt: 'desc' },
   });
 };

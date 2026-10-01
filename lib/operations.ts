@@ -3,10 +3,15 @@ import { getConnection } from '@/lib/connections';
 import { enqueue, notifyStore } from '@/lib/outbox';
 import { queueAccountingSync } from '@/lib/accounting/sync';
 import { queueSupplierOrder } from '@/lib/punchout/orders';
+import { isGoodCondition } from '@/lib/receiving';
+import { refreshVendorScorecard } from 'models/vendor';
+import { runVendorReturnAgent } from '@/lib/ai/agents/vendorReturnAgent';
 
 // What happens in the other Humlens apps when something happens here:
 //
-//   goods received ──► Inventory stock in (and the store is told)
+//   goods received ──► Inventory stock in, good-condition units only (and the store is told)
+//   goods received damaged or wrong ─► a draft return to vendor (never sent on its own)
+//   goods received / invoice approved ─► the vendor's automatic scorecard
 //   invoice approved ─► Inventory item costs (moving average)
 //   store's purchase request changes ─► the store refreshes its status
 //   PO issued / invoice approved / payment made ─► the accounting system
@@ -27,15 +32,18 @@ export const afterGoodsReceipt = (teamId: string, receiptId: string) =>
     const receipt = await prisma.goodsReceipt.findFirst({
       where: { id: receiptId, teamId },
       include: {
-        purchaseOrder: { select: { poNumber: true, requisitionId: true } },
+        purchaseOrder: { select: { poNumber: true, requisitionId: true, vendorId: true } },
         lineItems: { include: { poLineItem: { select: { sku: true, description: true } } } },
       },
     });
     if (!receipt) return;
+    void quietly('vendor scorecard', () => refreshVendorScorecard(teamId, receipt.purchaseOrder.vendorId));
+    void quietly('vendor return draft', () => runVendorReturnAgent(teamId, receipt.id));
 
     const inventory = await getConnection(teamId, 'INVENTORY');
+    // Damaged or wrong goods aren't sellable stock.
     const lines = receipt.lineItems
-      .filter((line) => line.poLineItem.sku && Number(line.quantityReceived) > 0)
+      .filter((line) => line.poLineItem.sku && Number(line.quantityReceived) > 0 && isGoodCondition(line.condition))
       .map((line) => ({ sku: line.poLineItem.sku!, quantity: Math.round(Number(line.quantityReceived)) }))
       .filter((line) => line.quantity > 0);
 
@@ -71,6 +79,10 @@ export const afterInvoiceApproved = (teamId: string, invoiceId: string) =>
   Promise.all([
     quietly('invoice to accounting', () => queueAccountingSync(teamId, 'BILL', invoiceId)),
     pushInvoiceCosts(teamId, invoiceId),
+    quietly('vendor scorecard', async () => {
+      const invoice = await prisma.invoice.findFirst({ where: { id: invoiceId, teamId }, select: { vendorId: true } });
+      if (invoice?.vendorId) await refreshVendorScorecard(teamId, invoice.vendorId);
+    }),
   ]);
 
 const pushInvoiceCosts = (teamId: string, invoiceId: string) =>

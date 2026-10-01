@@ -5,13 +5,14 @@ import { ApiError } from '@/lib/errors';
 import { can } from '@/lib/permissions';
 import { applyInvoiceMatch } from './invoice';
 import { approveRequisitionStep, createDraftRequisition } from './requisition';
+import { createVendorReturnDraftAction } from './vendorReturn';
 import type { ActionContext, AnyActionDefinition } from './types';
 
 export type { ActionContext, EditableField } from './types';
 
 // Every change an agent can propose, keyed by name. Add new actions here.
 const registry: Record<string, AnyActionDefinition> = Object.fromEntries(
-  [approveRequisitionStep, createDraftRequisition, applyInvoiceMatch].map((action) => [action.name, action])
+  [approveRequisitionStep, createDraftRequisition, applyInvoiceMatch, createVendorReturnDraftAction].map((action) => [action.name, action])
 );
 
 export function getAction(name: string) {

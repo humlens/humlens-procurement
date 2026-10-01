@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { GetServerSideProps } from 'next';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -18,6 +19,9 @@ export default function Receiving() {
   const queryClient = useQueryClient();
   const [poId, setPoId] = useState('');
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // Blank means it arrived fine. Anything else ("damaged", "wrong item")
+  // keeps those units out of stock and drafts a return to the vendor.
+  const [conditions, setConditions] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -51,7 +55,11 @@ export default function Receiving() {
   const submit = async () => {
     const lineItems = Object.entries(quantities)
       .filter(([, qty]) => qty > 0)
-      .map(([poLineItemId, quantityReceived]) => ({ poLineItemId, quantityReceived }));
+      .map(([poLineItemId, quantityReceived]) => ({
+        poLineItemId,
+        quantityReceived,
+        condition: conditions[poLineItemId]?.trim() || undefined,
+      }));
 
     if (lineItems.length === 0) {
       toast.error('Enter at least one received quantity.');
@@ -63,6 +71,7 @@ export default function Receiving() {
       await apiPost(`/api/teams/${slug}/goods-receipts`, { poId, lineItems });
       toast.success('Receipt recorded.');
       setQuantities({});
+      setConditions({});
       queryClient.invalidateQueries({ queryKey: ['purchase-order', slug, poId] });
       queryClient.invalidateQueries({ queryKey: ['goods-receipts', slug] });
       queryClient.invalidateQueries({ queryKey: ['purchase-orders', slug, 'receivable'] });
@@ -99,15 +108,24 @@ export default function Receiving() {
                         {li.receivedQty}/{li.quantity} received
                       </p>
                     </div>
-                    <input
-                      className="input w-28"
-                      type="number"
-                      min={0}
-                      max={outstanding}
-                      placeholder="Qty"
-                      value={quantities[li.id] ?? ''}
-                      onChange={(e) => setQuantities({ ...quantities, [li.id]: Number(e.target.value) })}
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        className="input w-24"
+                        type="number"
+                        min={0}
+                        max={outstanding}
+                        placeholder="Qty"
+                        value={quantities[li.id] ?? ''}
+                        onChange={(e) => setQuantities({ ...quantities, [li.id]: Number(e.target.value) })}
+                      />
+                      <input
+                        className="input w-32"
+                        placeholder="Condition"
+                        title="Leave blank if it arrived fine, or say what's wrong, e.g. damaged"
+                        value={conditions[li.id] ?? ''}
+                        onChange={(e) => setConditions({ ...conditions, [li.id]: e.target.value })}
+                      />
+                    </div>
                   </div>
                 );
               })}
@@ -122,9 +140,14 @@ export default function Receiving() {
           <h2 className="mb-3 font-medium">Recent receipts</h2>
           <ul className="divide-y divide-gray-100 text-sm">
             {receipts?.slice(0, 10).map((r: any) => (
-              <li key={r.id} className="flex items-center justify-between py-2">
+              <li key={r.id} className="flex items-center justify-between gap-2 py-2">
                 <span>{r.purchaseOrder?.poNumber}</span>
                 <span className="text-gray-500">{new Date(r.receivedAt).toLocaleDateString()}</span>
+                {r.vendorReturns?.[0] && (
+                  <Link href={`/teams/${slug}/vendor-returns/${r.vendorReturns[0].id}`} className="text-xs text-amber-700 underline">
+                    {r.vendorReturns[0].returnNumber}
+                  </Link>
+                )}
                 <Badge status={r.status} />
               </li>
             ))}

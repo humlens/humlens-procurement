@@ -32,6 +32,7 @@ export type Resource =
   | 'contract'
   | 'purchase_order'
   | 'goods_receipt'
+  | 'vendor_return'
   | 'invoice'
   | 'payment'
   | 'agent_policy'
@@ -71,6 +72,7 @@ export const permissions: RolePermissions = {
     { resource: 'contract', actions: '*' },
     { resource: 'purchase_order', actions: '*' },
     { resource: 'goods_receipt', actions: '*' },
+    { resource: 'vendor_return', actions: '*' },
     { resource: 'invoice', actions: '*' },
     { resource: 'payment', actions: '*' },
     { resource: 'agent_policy', actions: '*' },
@@ -91,6 +93,7 @@ export const permissions: RolePermissions = {
     { resource: 'contract', actions: '*' },
     { resource: 'purchase_order', actions: '*' },
     { resource: 'goods_receipt', actions: ['read', 'create', 'update'] },
+    { resource: 'vendor_return', actions: ['read', 'create', 'update'] },
     { resource: 'invoice', actions: ['read', 'create', 'update', 'match'] },
     { resource: 'payment', actions: ['read', 'create'] },
     { resource: 'agent_policy', actions: '*' },
@@ -107,6 +110,7 @@ export const permissions: RolePermissions = {
     { resource: 'contract', actions: ['read'] },
     { resource: 'purchase_order', actions: ['read', 'approve', 'reject'] },
     { resource: 'goods_receipt', actions: ['read'] },
+    { resource: 'vendor_return', actions: ['read'] },
     { resource: 'invoice', actions: ['read'] },
     { resource: 'agent_action', actions: ['read', 'approve', 'reject'] },
   ],
@@ -118,6 +122,7 @@ export const permissions: RolePermissions = {
     { resource: 'contract', actions: ['read'] },
     { resource: 'purchase_order', actions: ['read'] },
     { resource: 'goods_receipt', actions: ['read'] },
+    { resource: 'vendor_return', actions: ['read', 'update'] },
     { resource: 'invoice', actions: '*' },
     { resource: 'payment', actions: '*' },
     { resource: 'agent_action', actions: ['read', 'approve', 'reject'] },
@@ -130,6 +135,7 @@ export const permissions: RolePermissions = {
     { resource: 'rfq', actions: ['read'] },
     { resource: 'purchase_order', actions: ['read'] },
     { resource: 'goods_receipt', actions: ['create', 'read'] },
+    { resource: 'vendor_return', actions: ['read'] },
     { resource: 'invoice', actions: ['read'] },
   ],
   AUDITOR: [
@@ -144,6 +150,7 @@ export const permissions: RolePermissions = {
     { resource: 'contract', actions: ['read'] },
     { resource: 'purchase_order', actions: ['read'] },
     { resource: 'goods_receipt', actions: ['read'] },
+    { resource: 'vendor_return', actions: ['read'] },
     { resource: 'invoice', actions: ['read'] },
     { resource: 'payment', actions: ['read'] },
     { resource: 'agent_action', actions: ['read'] },
